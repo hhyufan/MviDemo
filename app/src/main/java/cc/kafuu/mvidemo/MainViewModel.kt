@@ -34,7 +34,11 @@ class MainViewModel : CoreViewModel<MainUiIntent, MainUiState>(initStatus = Main
 
             // 如果是刷新状态，则不需要设置 loading 状态
             awaitUiStateOfType<MainUiState.Master>().let {
-                if (isRefresh) it.copy(isRefreshing = true) else it.copy(isLoading = true)
+                if (isRefresh) {
+                    it.copy(loadState = MainLoadState.PackagesRefresh)
+                } else {
+                    it.copy(loadState = MainLoadState.PackagesLoading)
+                }
             }.setup()
 
             // 模拟网络延迟
@@ -48,8 +52,7 @@ class MainViewModel : CoreViewModel<MainUiIntent, MainUiState>(initStatus = Main
             // 获取最新状态并更新为最终状态
             awaitUiStateOfType<MainUiState.Master>().copy(
                 listState = MainListState.ApplicationPackages(applications.map { it.packageName }),
-                isRefreshing = false,
-                isLoading = false
+                loadState = MainLoadState.None
             ).setup()
         }
     }
@@ -69,11 +72,21 @@ sealed class MainUiState {
      */
     data class Master(
         val listState: MainListState = MainListState.None,
-        val isRefreshing: Boolean = false,
-        val isLoading: Boolean = false
+        val loadState: MainLoadState = MainLoadState.None
     ) : MainUiState()
 }
 
+/**
+ * 主页加载状态
+ */
+sealed class MainLoadState {
+
+    data object None : MainLoadState()
+
+    data object PackagesLoading : MainLoadState()
+
+    data object PackagesRefresh : MainLoadState()
+}
 /**
  * 主页列表状态
  */
@@ -88,6 +101,7 @@ sealed class MainListState {
      */
     data class ApplicationPackages(val packages: List<String>) : MainListState()
 }
+
 
 /**
  * 主页Ui意图密封类
