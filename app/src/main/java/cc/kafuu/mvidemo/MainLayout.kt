@@ -16,14 +16,24 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults.Indicator
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import cc.kafuu.mvidemo.core.ActivityPreview
+
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.CircularProgressIndicator
 
 @Composable
 fun MainLayout(
@@ -47,16 +57,41 @@ private fun MasterLayout(
             .navigationBarsPadding()
             .fillMaxSize()
     ) {
-        // 列表视图区
-        when (val listState = uiState.listState) {
-            // 空状态，使用Spacer占位
-            MainListState.None -> Spacer(modifier = Modifier.weight(1f))
-            // 应用包名列表状态
-            is MainListState.ApplicationPackages -> ApplicationPackagesLayout(
-                modifier = Modifier.weight(1f),
-                listState = listState,
-                onEmitUiIntent = onEmitUiIntent
-            )
+        if (uiState.isLoading) {
+            // 显示加载中状态
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(horizontal = 10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(50.dp),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "加载中...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        } else {
+            // 列表视图区
+            when (val listState = uiState.listState) {
+                // 空状态，使用Spacer占位
+                MainListState.None -> Spacer(modifier = Modifier.weight(1f))
+                // 应用包名列表状态
+                is MainListState.ApplicationPackages -> ApplicationPackagesLayout(
+                    uiState = uiState,
+                    modifier = Modifier.weight(1f),
+                    listState = listState,
+                    onEmitUiIntent = onEmitUiIntent
+                )
+            }
         }
         Spacer(modifier = Modifier.height(10.dp))
         Button(
@@ -73,24 +108,42 @@ private fun MasterLayout(
 /**
  * 应用列表
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ApplicationPackagesLayout(
+    uiState: MainUiState.Master,
     listState: MainListState.ApplicationPackages,
     onEmitUiIntent: (MainUiIntent) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    LazyColumn(
-        modifier = modifier
-            .padding(horizontal = 10.dp)
-            .fillMaxWidth()
-    ) {
-        items(listState.packages) {
-            Spacer(modifier = Modifier.height(10.dp))
-            ApplicationPackageItem(it)
-        }
-    }
-}
+        val state = rememberPullToRefreshState()
+        // 显示应用列表
+        PullToRefreshBox(
+            isRefreshing = uiState.isRefreshing,
+            onRefresh = { onEmitUiIntent(MainUiIntent.RefreshApplicationList) },
+            modifier = modifier
+                .padding(horizontal = 10.dp)
+                .fillMaxWidth(),
+            state = state,
+            indicator = {
+                Indicator(
+                    modifier = Modifier.align(Alignment.TopCenter),
+                    isRefreshing = uiState.isRefreshing,
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    state = state
+                )
+            },
+        ) {
 
+                LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                    items(listState.packages) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        ApplicationPackageItem(it)
+                    }
+                }
+            }
+        }
 /**
  * 应用列表表项
  */
@@ -119,7 +172,6 @@ private fun ApplicationPackageItem(
 @Preview(widthDp = 320, heightDp = 640)
 @Composable
 fun MasterLayoutEmptyPreview() {
-    val list = (0..100).map { "Item$it" }
     ActivityPreview(darkTheme = false) {
         MainLayout(
             uiState = MainUiState.Master(

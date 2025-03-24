@@ -4,7 +4,10 @@ import android.content.Context
 import android.content.pm.PackageManager
 import androidx.lifecycle.viewModelScope
 import cc.kafuu.mvidemo.core.CoreViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
 
@@ -13,7 +16,8 @@ class MainViewModel : CoreViewModel<MainUiIntent, MainUiState>(initStatus = Main
     override fun onReceivedUiIntent(uiIntent: MainUiIntent) {
         when (uiIntent) {
             MainUiIntent.PageCreate -> onPageCreate()
-            MainUiIntent.LoadApplicationList -> onLoadApplicationList()
+            MainUiIntent.LoadApplicationList -> onLoadApplicationList(false)
+            MainUiIntent.RefreshApplicationList -> onLoadApplicationList(true)
         }
     }
 
@@ -24,16 +28,30 @@ class MainViewModel : CoreViewModel<MainUiIntent, MainUiState>(initStatus = Main
 //        _uiStateFlow.value = MainUiState.Master()
     }
 
-    private fun onLoadApplicationList() = viewModelScope.launch {
-        val applications = get<Context>().packageManager.getInstalledApplications(
-            PackageManager.GET_META_DATA
-        )
-        // awaitUiStateOfType等待uiState变成MainUiState.Master类型后才会返回
-        // 如果当前uiState状态不是MainUiState.Master则会阻塞这个协程，直到状态变更为MainUiState.Master状态
-        // 当uiState当前状态为Master状态则更新当前Master状态中的列表状态
-        awaitUiStateOfType<MainUiState.Master>().copy(
-            listState = MainListState.ApplicationPackages(applications.map { it.packageName })
-        ).setup()
+    private fun onLoadApplicationList(isRefresh: Boolean) {
+        // 先设置loading状态，确保UI能够立即更新显示loading
+        viewModelScope.launch {
+
+            // 如果是刷新状态，则不需要设置 loading 状态
+            awaitUiStateOfType<MainUiState.Master>().let {
+                if (isRefresh) it.copy(isRefreshing = true) else it.copy(isLoading = true)
+            }.setup()
+
+            // 模拟网络延迟
+            delay(2000)
+
+            // 执行耗时操作
+            val applications = withContext(Dispatchers.IO) {
+                get<Context>().packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
+            }
+
+            // 获取最新状态并更新为最终状态
+            awaitUiStateOfType<MainUiState.Master>().copy(
+                listState = MainListState.ApplicationPackages(applications.map { it.packageName }),
+                isRefreshing = false,
+                isLoading = false
+            ).setup()
+        }
     }
 }
 
@@ -50,7 +68,9 @@ sealed class MainUiState {
      * 页面主要状态
      */
     data class Master(
-        val listState: MainListState = MainListState.None
+        val listState: MainListState = MainListState.None,
+        val isRefreshing: Boolean = false,
+        val isLoading: Boolean = false
     ) : MainUiState()
 }
 
@@ -79,7 +99,12 @@ sealed class MainUiIntent {
     data object PageCreate : MainUiIntent()
 
     /**
-     * 刷新应用列表
+     * 加载应用列表（按钮点击）
      */
     data object LoadApplicationList : MainUiIntent()
+
+    /**
+     * 刷新应用列表（下拉刷新）
+     */
+    data object RefreshApplicationList : MainUiIntent()
 }
